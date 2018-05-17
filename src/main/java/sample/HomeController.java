@@ -1,12 +1,15 @@
 package sample;
 
-import com.jfoenix.controls.JFXHamburger;
-import com.jfoenix.controls.JFXListView;
+import com.jfoenix.controls.*;
 import javafx.application.Platform;
+import javafx.beans.InvalidationListener;
+import javafx.beans.Observable;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
+import javafx.collections.ListChangeListener;
 import javafx.collections.MapChangeListener;
 import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
@@ -19,6 +22,9 @@ import javafx.scene.control.ProgressBar;
 import javafx.scene.image.Image;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
+import javafx.scene.layout.Background;
+import javafx.scene.layout.BackgroundFill;
+import javafx.scene.layout.Pane;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
@@ -28,9 +34,11 @@ import javafx.util.Duration;
 import util.FileUtils;
 import util.PropertiesUtils;
 
+import javax.sound.sampled.*;
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.text.html.ImageView;
+import java.awt.*;
 import java.io.*;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -64,14 +72,30 @@ public class HomeController implements Initializable {
     private MediaView mediaView;
 
     @FXML
-    private final ProgressBar progress = new ProgressBar();
+    private JFXToggleButton dark_mode_button;
+
+    @FXML
+    private JFXProgressBar progress;
+
+    @FXML
+    private Pane right_banner_top, left_banner_top;
+
+    @FXML
+    private AnchorPane center_banner;
+
+    @FXML
+    private JFXSlider volumeSlider;
+
+    @FXML
+    private JFXButton next_button, prev_button;
 
     private ObjectProperty<Path> selectedMedia = new SimpleObjectProperty<>();
     private boolean stopRequested = false;
     private boolean atEndOfMedia = false;
     private String path;
     private Media media;
-    private MediaPlayer mediaPlayer;
+    private MediaPlayer player;
+    private MediaPlayer nextPlayer;
     //    private final
     private String dir = "/Users/paul/Music/iTunes/iTunes Media/Music/Blur/Blur";
     private ObservableList music_real_path_list;
@@ -79,47 +103,76 @@ public class HomeController implements Initializable {
     private int selected;
     private ObservableList music_name_list;
     private MapChangeListener<String, Object> metadataChangeListener;
-
+    private List<MediaPlayer> players;
+    private List<Path> listOfFiles;
 
     public void initialize(URL location, ResourceBundle resources) {
+
+
+        music_list.getItems().addListener(new ListChangeListener() {
+            @Override
+            public void onChanged(Change c) {
+                System.exit(0);
+            }
+        });
+
         music_list.setOnMouseClicked((event) -> {
             if (event.getClickCount() == 2) {
 
-                List<MediaPlayer> players = new ArrayList<>();
 
                 selected = music_list.getSelectionModel().getSelectedIndex();
-                for (int i = 0; i < music_real_path_list.size(); i++) {
 
-                    players.add(createPlayer(Paths.get(music_real_path_list.get(i).toString()).toUri().toString()));
+
+                for (int i = selected; i < music_real_path_list.size(); i++) {
+                    player = players.get(selected);
+                    if (selected == music_real_path_list.size() - 1) {
+                        nextPlayer = null;
+                    } else {
+
+                        nextPlayer = players.get((selected + 1) % players.size());
+                        player.setOnEndOfMedia(new Runnable() {
+                            @Override
+                            public void run() {
+                                player.stop();
+
+                                mediaView.setMediaPlayer(nextPlayer);
+                                nextPlayer.play();
+                                setCurrentlyPlaying(mediaView.getMediaPlayer());
+
+                            }
+                        });
+                    }
+
+
                 }
-//                if (mediaPlayer != null) {
-//                    mediaPlayer.stop();
-//                    mediaPlayer = players.get(selected);
-//                    mediaPlayer.play();
-//                }
-//
-//
-//                mediaPlayer = players.get(selected);
-//                mediaPlayer.play();
-//                System.out.println(players.get(selected));
 
 
-//                if (mediaView != null) {
-//                    mediaPlayer.stop();
-//                    mediaView.setMediaPlayer(players.get(selected));
-//                    mediaView.getMediaPlayer().play();
-//                }
-
+                if (mediaView.getMediaPlayer() != null) {
+                    mediaView.getMediaPlayer().stop();
+                }
                 mediaView = new MediaView(players.get(selected));
 
 
+//
                 mediaView.setMediaPlayer(players.get(selected));
                 mediaView.getMediaPlayer().play();
+                setCurrentlyPlaying(mediaView.getMediaPlayer());
 
+
+                volumeSlider.setValue(mediaView.getMediaPlayer().getVolume() * 50);
+                volumeSlider.valueProperty().addListener(new InvalidationListener() {
+                    @Override
+                    public void invalidated(Observable observable) {
+                        mediaView.getMediaPlayer().setVolume(volumeSlider.getValue() / 100);
+                    }
+                });
+
+
+                System.out.println(mediaView.getMediaPlayer().getStatus());
 
             }
         });
-        progress.setMaxWidth(Double.MAX_VALUE);
+
 
     }
 
@@ -146,13 +199,40 @@ public class HomeController implements Initializable {
                 curPlayer.pause();
             }
 
-            if (event.getSource() == music_load_button) {
+            if (event.getSource() == next_button) {
+                selected = selected + 1;
+                if (mediaView.getMediaPlayer() != null) {
+                    mediaView.getMediaPlayer().stop();
+                }
 
+                if (selected >= players.size()) {
+                    selected = 0;
+                }
+
+
+//
+                mediaView.setMediaPlayer(players.get(selected));
+                mediaView.getMediaPlayer().play();
+            }
+
+            if (event.getSource() == prev_button) {
+                selected = selected - 1;
+                if (mediaView.getMediaPlayer() != null) {
+                    mediaView.getMediaPlayer().stop();
+                }
+                if (selected <= -1) {
+                    selected = players.size() - 1;
+                }
+                mediaView.setMediaPlayer(players.get(selected));
+                mediaView.getMediaPlayer().play();
+            }
+
+            if (event.getSource() == music_load_button) {
                 FileChooser chooser = new FileChooser();
                 chooser.getExtensionFilters().addAll(
                         new FileChooser.ExtensionFilter("Files",
                                 PropertiesUtils.readFormats()));
-                List<Path> listOfFiles = new ArrayList<Path>();
+                listOfFiles = new ArrayList<Path>();
                 listOfFiles = FileUtils.convertListFiletoListPath(chooser.showOpenMultipleDialog(((Button) event.getSource()).getScene().getWindow()));
                 if (listOfFiles != null) {
                     listOfFiles.stream().forEach(System.out::println);
@@ -161,35 +241,67 @@ public class HomeController implements Initializable {
 
                     music_name_list = FXCollections.observableArrayList();
                     music_real_path_list = FXCollections.observableArrayList();
-//                    File[] sourceFile = new File[playListFiles.size()];
+                    players = new ArrayList<>();
 
-                }
-                for (int i = 0; i < playListFiles.size(); i++) {
-                    music_real_path_list.add("target/classes/media/" + playListFiles.get(i).toString().substring(playListFiles.get(i).toString().lastIndexOf("/") + 1, playListFiles.get(i).toString().length()));
-                    FileInputStream inputStream = null;
+//                    File[] sourceFile = new File[playListFiles.size()];
+                    for (int i = 0; i < playListFiles.size(); i++) {
+                        music_real_path_list.add("target/classes/media/" + playListFiles.get(i).toString().substring(playListFiles.get(i).toString().lastIndexOf("/") + 1, playListFiles.get(i).toString().length()));
+                        FileInputStream inputStream = null;
 //
 
-                    try {
-                        inputStream = new FileInputStream(playListFiles.get(i).toString());
-                        FileOutputStream outputStream = new FileOutputStream(HomeController.class.getResource("../media/").toString().split("file:")[1] + playListFiles.get(i).toString().substring(playListFiles.get(i).toString().lastIndexOf("/") + 1, playListFiles.get(i).toString().length()));
-                        FileChannel fcin = inputStream.getChannel();
-                        FileChannel fcout = outputStream.getChannel();
-                        long size = fcin.size();
-                        fcin.transferTo(0, size, fcout);
+                        try {
+                            inputStream = new FileInputStream(playListFiles.get(i).toString());
+                            FileOutputStream outputStream = new FileOutputStream(HomeController.class.getResource("../media/").toString().split("file:")[1] + playListFiles.get(i).toString().substring(playListFiles.get(i).toString().lastIndexOf("/") + 1, playListFiles.get(i).toString().length()));
+                            FileChannel fcin = inputStream.getChannel();
+                            FileChannel fcout = outputStream.getChannel();
+                            long size = fcin.size();
+                            fcin.transferTo(0, size, fcout);
 
-                        fcout.close();
-                        fcin.close();
+                            fcout.close();
+                            fcin.close();
 
-                        outputStream.close();
-                        inputStream.close();
-                    } catch (FileNotFoundException e) {
-                        e.printStackTrace();
-                    } catch (IOException e) {
-                        e.printStackTrace();
+                            outputStream.close();
+                            inputStream.close();
+                        } catch (FileNotFoundException e) {
+                            e.printStackTrace();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+
+                        music_name_list.add(playListFiles.get(i).toString().substring(playListFiles.get(i).toString().lastIndexOf("/") + 1, playListFiles.get(i).toString().length()));
+                        music_list.setItems(music_name_list);
+
+
                     }
 
-                    music_name_list.add(playListFiles.get(i).toString().substring(playListFiles.get(i).toString().lastIndexOf("/") + 1, playListFiles.get(i).toString().length()));
-                    music_list.setItems(music_name_list);
+                }
+
+
+                for (int i = 0; i < music_real_path_list.size(); i++) {
+
+                    players.add(createPlayer(Paths.get(music_real_path_list.get(i).toString()).toUri().toString()));
+                }
+
+
+                for (int i = selected; i < music_real_path_list.size(); i++) {
+                    player = players.get(selected);
+                    if (selected == music_real_path_list.size() - 1) {
+                        nextPlayer = null;
+                    } else {
+
+                        nextPlayer = players.get((selected + 1) % players.size());
+                        player.setOnEndOfMedia(new Runnable() {
+                            @Override
+                            public void run() {
+                                player.stop();
+
+                                mediaView.setMediaPlayer(nextPlayer);
+                                nextPlayer.play();
+                                setCurrentlyPlaying(mediaView.getMediaPlayer());
+
+                            }
+                        });
+                    }
 
 
                 }
@@ -198,6 +310,22 @@ public class HomeController implements Initializable {
 //                    System.out.println(music_list);
 
 
+            }
+
+            if (event.getSource() == dark_mode_button) {
+                if (dark_mode_button.isSelected()) {
+                    right_banner_top.setStyle("-fx-background-color: #" + "000000");
+                    center_banner.setStyle("-fx-background-color: #" + "000000");
+                    music_list.setStyle("-fx-background-color: #" + "000000");
+                    left_banner_top.setStyle("-fx-background-color: #" + "000000");
+                } else {
+                    right_banner_top.setStyle("-fx-background-color: #" + "5AB0E2");
+                    center_banner.setStyle("-fx-background-color: #" + "5AB0E2");
+                    music_list.setStyle("-fx-background-color: #" + "FFFFFF");
+                    left_banner_top.setStyle("-fx-background-color: #" + "5AB0E2");
+
+
+                }
             }
 
 
@@ -214,6 +342,23 @@ public class HomeController implements Initializable {
             }
         });
         return player;
+    }
+
+    private void setCurrentlyPlaying(final MediaPlayer newPlayer) {
+        newPlayer.seek(Duration.ZERO);
+
+        progress.setProgress(0);
+        progressChangeListener = new ChangeListener<Duration>() {
+            @Override
+            public void changed(ObservableValue<? extends Duration> observableValue, Duration oldValue, Duration newValue) {
+                progress.setProgress(1.0 * newPlayer.getCurrentTime().toMillis() / newPlayer.getTotalDuration().toMillis());
+            }
+        };
+        newPlayer.currentTimeProperty().addListener(progressChangeListener);
+
+        String source = newPlayer.getMedia().getSource();
+
+
     }
 
 
